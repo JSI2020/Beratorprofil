@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import src.bootstrap  # noqa: F401 — clear stale __pycache__ once per process
+
 import json
 from datetime import datetime
 from pathlib import Path
@@ -17,12 +19,12 @@ from src.web.pipeline import (
     content_to_json,
     export_pptx,
     generate_profile,
-    import_profile_from_pptx,
     init_env,
     llm_status,
     save_upload_temporarily,
     validate_for_export,
 )
+from src.web.pptx_import import import_profile_from_pptx
 from src.parser.cv_text import extract_cv_text
 from src.web.preview import render_hero, render_llm_badge, render_preview, render_warnings
 from src.web.settings_panel import render_settings_panel

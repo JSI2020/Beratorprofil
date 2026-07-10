@@ -16,7 +16,6 @@ from src.llm.client import llm_available, resolve_llm_config
 from src.llm.profile_generator import generate_profile_from_cv_text, revise_profile_with_manager_comment
 from src.models.schemas import BeraterprofilContent, CategorizedBullet, ToolCategory
 from src.parser.cv_text import extract_cv_text_with_hints, parse_cv_for_audit
-from src.parser.pptx_parser import parse_beraterprofil_pptx
 from src.transformer.content_transformer import content_from_dict, transform_cv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -131,13 +130,9 @@ def apply_manager_feedback(
 
 
 def import_profile_from_pptx(pptx_path: Path) -> tuple[BeraterprofilContent, dict]:
-    content = parse_beraterprofil_pptx(pptx_path)
-    audit = {
-        "generation_mode": "Importiert aus PPTX",
-        "source_pptx": str(pptx_path),
-        "beraterprofil": content.to_dict(),
-    }
-    return content, audit
+    from src.web.pptx_import import import_profile_from_pptx as _import
+
+    return _import(pptx_path)
 
 
 def export_pptx(
