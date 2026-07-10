@@ -55,7 +55,6 @@ def generate_profile(
     use_llm: bool | None = None,
     strict_template: bool = False,
     extra_certificates: list[str] | None = None,
-    source_filename: str | None = None,
 ) -> tuple[BeraterprofilContent, dict]:
     """Build profile from the uploaded CV only — rules-based by default, optional LLM."""
     parsed = parse_cv(cv_path)
@@ -87,7 +86,7 @@ def generate_profile(
     audit = {
         "generation_mode": mode,
         "data_source": "uploaded_cv_only",
-        "cv_filename": source_filename or cv_path.name,
+        "cv_filename": cv_path.name,
         "cv_text_length": len(cv_text),
         "beraterprofil": content.to_dict(),
     }

@@ -152,8 +152,8 @@ def render_main_workflow(opts: dict, status: dict) -> None:
                     use_llm=opts["use_llm"],
                     strict_template=opts["strict_template"],
                     extra_certificates=opts["certificates"] or None,
-                    source_filename=uploaded_cv.name,
                 )
+                audit["cv_filename"] = uploaded_cv.name
 
                 if opts["position_override"] != "Aus CV ableiten":
                     content.position_level = opts["position_override"]
