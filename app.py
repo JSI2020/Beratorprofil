@@ -74,7 +74,7 @@ def render_main_workflow(opts: dict, status: dict) -> None:
 
     render_hero()
     render_llm_badge(status["active"], status.get("provider"))
-    st.caption("Build: 378bc55 · CV-only rules · LLM gap-fill für fehlende Felder")
+    st.caption("Build: pipeline-v2 · Standard = CV-Regeln + LLM gap-fill (LLM-Volltext optional)")
 
     if opts["use_llm"] and not status["active"]:
         st.warning("LLM ist aktiviert, aber kein API-Key gefunden — es wird regelbasiert generiert.")
@@ -163,6 +163,12 @@ def render_main_workflow(opts: dict, status: dict) -> None:
                     st.session_state.profile_json = content_to_json(content)
                     st.session_state.audit_json = json.dumps(audit, ensure_ascii=False, indent=2)
                     st.session_state.generation_mode = audit.get("generation_mode", "Regelbasiert")
+                    st.success(f"Profil erstellt — {audit.get('generation_mode', '')}")
+                    if audit.get("education_count", 0) == 0:
+                        st.warning(
+                            "Abschluss/Zertifikate: 0 Einträge gefunden. "
+                            "Prüfen Sie Audit / CV-Text oder aktivieren Sie LLM-Volltext."
+                        )
                 except Exception as exc:
                     st.error(f"Profil-Generierung fehlgeschlagen: {exc}")
                     st.caption("Tipp: Deaktivieren Sie „LLM verwenden“ für regelbasierte Extraktion ohne API-Key.")

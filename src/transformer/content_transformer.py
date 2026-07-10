@@ -36,7 +36,7 @@ def transform_cv(
     strict_template: bool = False,
     cv_only: bool = False,
 ) -> BeraterprofilContent:
-    domain = domain_override or _classify_domain(cv)
+    domain = domain_override or classify_domain_from_cv(cv)
 
     if use_llm is None:
         use_llm = False
@@ -62,6 +62,10 @@ def _fill_gaps_if_needed(content: BeraterprofilContent, cv: ParsedCV) -> Berater
     if not cv_text:
         return content
     return fill_missing_from_cv_with_llm(content, cv_text)
+
+
+def classify_domain_from_cv(cv: ParsedCV) -> str:
+    return _classify_domain(cv)
 
 
 def _classify_domain(cv: ParsedCV) -> str:

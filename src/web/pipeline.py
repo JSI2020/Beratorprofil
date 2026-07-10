@@ -13,11 +13,15 @@ from src.utils.export_name import DEFAULT_EXPORT_STEM
 
 from src.generator.pptx_generator import generate_pptx
 from src.llm.client import llm_available, resolve_llm_config
-from src.llm.profile_generator import revise_profile_with_manager_comment
+from src.llm.gap_fill import fill_missing_from_cv_with_llm, missing_profile_fields
+from src.llm.profile_generator import generate_profile_from_cv_text, revise_profile_with_manager_comment
 from src.models.schemas import BeraterprofilContent, CategorizedBullet, ToolCategory
+from src.parser.cv_hints import extract_cv_hints
 from src.parser.cv_parser import parse_cv
 from src.parser.cv_text import extract_cv_text
-from src.transformer.content_transformer import content_from_dict, transform_cv
+from src.transformer.content_transformer import content_from_dict
+from src.transformer.cv_only_builder import build_profile_from_cv_only
+from src.transformer.template_profiles import build_profile_content
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_TEMPLATE = PROJECT_ROOT / "template" / "Beraterprofil_TEMPLATE.pptx"
@@ -48,6 +52,12 @@ def cleanup_temp(path: Path | None) -> None:
         path.unlink(missing_ok=True)
 
 
+def _resolve_domain(parsed, domain: str | None) -> str:
+    from src.transformer.content_transformer import classify_domain_from_cv
+
+    return domain or classify_domain_from_cv(parsed)
+
+
 def generate_profile(
     cv_path: Path,
     *,
@@ -56,38 +66,66 @@ def generate_profile(
     strict_template: bool = False,
     extra_certificates: list[str] | None = None,
 ) -> tuple[BeraterprofilContent, dict]:
-    """Build profile from the uploaded CV only — rules-based by default, optional LLM."""
+    """CV-only rules first, LLM gap-fill for missing fields, optional full LLM."""
     parsed = parse_cv(cv_path)
     cv_text = extract_cv_text(cv_path)
+    domain_resolved = _resolve_domain(parsed, domain)
 
     if use_llm is None:
         use_llm = False
 
-    effective_llm = bool(use_llm and llm_available())
-
-    content = transform_cv(
-        parsed,
-        domain_override=domain,
-        extra_certificates=extra_certificates,
-        use_llm=effective_llm,
-        strict_template=strict_template,
-        cv_only=True,
-    )
+    steps: list[str] = []
 
     if strict_template:
-        mode = "Regelbasiert (Template)"
-    elif use_llm and effective_llm:
-        mode = "LLM (nur hochgeladenes CV)"
-    elif use_llm:
-        mode = "Regelbasiert + LLM gap-fill (kein API-Key für Voll-LLM)"
+        content = build_profile_content(parsed, domain_resolved, extra_certificates)
+        steps.append("ORBIT-Template")
     else:
-        mode = "Regelbasiert (CV-only) + LLM gap-fill"
+        content = build_profile_from_cv_only(parsed, domain_resolved, extra_certificates)
+        steps.append("CV-only Regeln")
+
+        missing_before = missing_profile_fields(content)
+        if missing_before and llm_available():
+            content = fill_missing_from_cv_with_llm(content, cv_text)
+            missing_after = missing_profile_fields(content)
+            if len(missing_after) < len(missing_before):
+                steps.append(f"LLM gap-fill ({', '.join(missing_before)})")
+            else:
+                steps.append("LLM gap-fill (keine Ergänzung)")
+        elif missing_before:
+            steps.append("gap-fill übersprungen (kein API-Key)")
+            content.audit_warnings.append(
+                "Fehlende Felder — LLM gap-fill nicht möglich (kein API-Key): "
+                + ", ".join(missing_before)
+            )
+
+        if use_llm and llm_available():
+            try:
+                content = generate_profile_from_cv_text(
+                    cv_text,
+                    domain=domain_resolved,
+                    extra_certificates=extra_certificates,
+                    extraction_hints=extract_cv_hints(cv_text),
+                    cv_only=True,
+                )
+                steps.append("LLM Volltext")
+                still_missing = missing_profile_fields(content)
+                if still_missing and llm_available():
+                    content = fill_missing_from_cv_with_llm(content, cv_text)
+                    if still_missing:
+                        steps.append(f"gap-fill nach LLM ({', '.join(still_missing)})")
+            except Exception as exc:
+                content.audit_warnings.append(f"LLM Volltext fehlgeschlagen: {exc}")
+                steps.append("LLM Volltext fehlgeschlagen")
+
+    mode = " → ".join(steps)
 
     audit = {
         "generation_mode": mode,
         "data_source": "uploaded_cv_only",
         "cv_filename": cv_path.name,
         "cv_text_length": len(cv_text),
+        "education_count": len(content.education_certificates),
+        "missing_fields_after": missing_profile_fields(content),
         "beraterprofil": content.to_dict(),
     }
     return content, audit

@@ -29,9 +29,10 @@ def render_settings_panel(config: dict) -> dict:
 
         st.markdown("**Generierung**")
         use_llm = st.checkbox(
-            "LLM verwenden",
-            value=llm_status()["active"],
-            help="Ohne LLM: regelbasierte Extraktion nur aus dem hochgeladenen CV",
+            "LLM verwenden (Volltext)",
+            value=False,
+            help="Standard: Regeln aus CV + LLM nur für fehlende Felder. "
+            "Aktiviert: gesamtes Profil per LLM aus CV-Text.",
         )
         strict_template = st.checkbox(
             "Striktes ORBIT-Template",
