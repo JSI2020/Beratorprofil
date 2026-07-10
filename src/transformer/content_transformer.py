@@ -8,6 +8,7 @@ from src.models.schemas import (
     ParsedCV,
     ToolCategory,
 )
+from src.transformer.cv_only_builder import build_profile_from_cv_only
 from src.transformer.template_profiles import build_profile_content
 
 DOMAIN_KEYWORDS: dict[str, list[str]] = {
@@ -40,14 +41,16 @@ def transform_cv(
     if use_llm is None:
         use_llm = False
 
-    if strict_template or not use_llm:
-        content = build_profile_content(cv, domain, extra_certificates)
+    if strict_template:
+        return build_profile_content(cv, domain, extra_certificates)
+    if not use_llm:
+        content = build_profile_from_cv_only(cv, domain, extra_certificates)
         return _fill_gaps_if_needed(content, cv)
 
     try:
         return _transform_with_llm(cv, domain, extra_certificates, cv_only=cv_only)
     except Exception as exc:
-        content = build_profile_content(cv, domain, extra_certificates)
+        content = build_profile_from_cv_only(cv, domain, extra_certificates)
         content.audit_warnings.append(f"LLM fallback used: {exc}")
         return _fill_gaps_if_needed(content, cv)
 

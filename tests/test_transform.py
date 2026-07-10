@@ -21,8 +21,8 @@ def test_telecom_domain_classification():
     content = transform_cv(cv, use_llm=False)
     assert content.domain == "Funknetzplanung"
     assert content.title == "Beraterprofil – Funknetzplanung"
-    assert content.position_level == "Consultant"
-    assert len(content.kompetenzen) == 8
+    assert len(content.kompetenzen) >= 1
+    assert "15 Jahren" not in content.summary  # no generic ORBIT template filler
 
 
 def test_template_exists():

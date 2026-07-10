@@ -110,34 +110,64 @@ def _extract_tool_lines(block: str) -> list[str]:
 def _parse_education(text: str) -> list[EducationEntry]:
     block = _extract_section(
         text,
-        start_patterns=[r"Qualification", r"Education", r"Ausbildung"],
-        end_patterns=[r"TOOLS", r"Tools", r"$"],
+        start_patterns=[
+            r"## SECTION: EDUCATION ##",
+            r"## SECTION: CERTIFICATIONS ##",
+            r"Qualification",
+            r"Education",
+            r"Ausbildung",
+            r"Certifications",
+        ],
+        end_patterns=[r"## SECTION:", r"TOOLS", r"Tools", r"Work Experience", r"$"],
     )
     if not block:
-        return []
+        block = text
 
     entries: list[EducationEntry] = []
-    degree_match = re.search(
-        r"(B\.?E\.?|Bachelor|Master|M\.?Sc|Diplom|Ph\.?D)[^\n]*",
-        block,
-        flags=re.IGNORECASE,
-    )
-    institution_match = re.search(
-        r"(University|Universität|Hochschule|Institute)[^\n]*",
-        block,
-        flags=re.IGNORECASE,
-    )
-    year_match = re.search(r"(19|20)\d{2}", block)
+    seen: set[str] = set()
 
-    if degree_match or institution_match:
-        entries.append(
-            EducationEntry(
-                year=year_match.group(0) if year_match else "",
-                degree=degree_match.group(0).strip() if degree_match else block.splitlines()[0],
-                institution=institution_match.group(0).strip() if institution_match else "",
-            )
+    for line in block.splitlines():
+        line = line.strip().replace("[TABLE]", "").strip()
+        if not line or line.startswith("##"):
+            continue
+        if "|" in line:
+            cells = [c.strip() for c in line.split("|") if c.strip()]
+            if len(cells) >= 2:
+                key = "|".join(cells)
+                if key in seen:
+                    continue
+                seen.add(key)
+                year = cells[0] if re.match(r"^(19|20)\d{2}$", cells[0]) else ""
+                degree = cells[1] if len(cells) > 1 else cells[0]
+                institution = cells[2] if len(cells) > 2 else ""
+                entries.append(EducationEntry(year=year, degree=degree, institution=institution))
+                continue
+
+        degree_match = re.search(
+            r"(B\.?E\.?|B\.?Eng\.?|Bachelor|Master|M\.?Sc|Diplom|Ph\.?D)[^\n|]*",
+            line,
+            flags=re.IGNORECASE,
         )
-    return entries
+        institution_match = re.search(
+            r"(University|Universität|Hochschule|Institute|College)[^\n|]*",
+            line,
+            flags=re.IGNORECASE,
+        )
+        year_match = re.search(r"\b(19|20)\d{2}\b", line)
+        if degree_match or institution_match or re.search(r"certif|zertifikat|psm|hcia", line, re.I):
+            key = line.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(
+                EducationEntry(
+                    year=year_match.group(0) if year_match else "",
+                    degree=degree_match.group(0).strip() if degree_match else line,
+                    institution=institution_match.group(0).strip() if institution_match else "",
+                )
+            )
+
+    return entries[:12]
 
 
 def _parse_work_history(text: str) -> list[WorkEntry]:

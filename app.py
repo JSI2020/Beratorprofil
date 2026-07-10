@@ -74,7 +74,7 @@ def render_main_workflow(opts: dict, status: dict) -> None:
 
     render_hero()
     render_llm_badge(status["active"], status.get("provider"))
-    st.caption("Build: e67be81 · Optional LLM · CV-only extraction")
+    st.caption("Build: b8324fc+ · CV-only rules · LLM gap-fill für fehlende Felder")
 
     if opts["use_llm"] and not status["active"]:
         st.warning("LLM ist aktiviert, aber kein API-Key gefunden — es wird regelbasiert generiert.")

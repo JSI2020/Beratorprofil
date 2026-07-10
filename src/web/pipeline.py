@@ -79,9 +79,9 @@ def generate_profile(
     elif use_llm and effective_llm:
         mode = "LLM (nur hochgeladenes CV)"
     elif use_llm:
-        mode = "Regelbasiert (LLM gewählt, kein API-Key)"
+        mode = "Regelbasiert + LLM gap-fill (kein API-Key für Voll-LLM)"
     else:
-        mode = "Regelbasiert (nur CV)"
+        mode = "Regelbasiert (CV-only) + LLM gap-fill"
 
     audit = {
         "generation_mode": mode,
