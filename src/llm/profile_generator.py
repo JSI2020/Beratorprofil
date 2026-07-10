@@ -19,6 +19,7 @@ def generate_profile_from_cv_text(
     domain: str | None = None,
     extra_certificates: list[str] | None = None,
     parsed_cv=None,
+    extraction_hints: dict | None = None,
 ) -> BeraterprofilContent:
     """Primary pipeline: LLM reads full CV text and returns complete template content."""
     system_prompt = (_PROMPTS_DIR / "beraterprofil_from_cv.md").read_text(encoding="utf-8")
@@ -28,6 +29,7 @@ def generate_profile_from_cv_text(
         system_prompt,
         {
             "cv_text": cv_text,
+            "extraction_hints": extraction_hints or {},
             "domain": domain_hint,
             "extra_certificates": extra_certificates or [],
         },
@@ -35,16 +37,22 @@ def generate_profile_from_cv_text(
     content = content_from_dict(data)
 
     if parsed_cv is not None:
-        content = normalize_content(content, parsed_cv, content.domain or domain or "IT-Beratung", extra_certificates)
+        content = normalize_content(
+            content,
+            parsed_cv,
+            content.domain or domain or "IT-Beratung",
+            extra_certificates,
+            extraction_hints=extraction_hints,
+        )
 
     return content
 
 
 def revise_profile_with_manager_comment(
-    cv_text: str,
     current: BeraterprofilContent,
     manager_comment: str,
     *,
+    cv_text: str | None = None,
     parsed_cv=None,
     extra_certificates: list[str] | None = None,
 ) -> BeraterprofilContent:
@@ -57,9 +65,10 @@ def revise_profile_with_manager_comment(
     data = call_llm_json(
         system_prompt,
         {
-            "cv_text": cv_text,
+            "cv_text": cv_text or "",
             "current_profile": current.to_dict(),
             "manager_comment": comment,
+            "revision_mode": "cv_backed" if cv_text else "profile_only",
         },
     )
     revised = content_from_dict(data)

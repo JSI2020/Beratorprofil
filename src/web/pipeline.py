@@ -9,13 +9,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.utils.filename import sanitize_filename
+from src.utils.export_name import DEFAULT_EXPORT_STEM
 
 from src.generator.pptx_generator import generate_pptx
 from src.llm.client import llm_available, resolve_llm_config
 from src.llm.profile_generator import generate_profile_from_cv_text, revise_profile_with_manager_comment
 from src.models.schemas import BeraterprofilContent, CategorizedBullet, ToolCategory
-from src.parser.cv_text import extract_cv_text, parse_cv_for_audit
+from src.parser.cv_text import extract_cv_text_with_hints, parse_cv_for_audit
+from src.parser.pptx_parser import parse_beraterprofil_pptx
 from src.transformer.content_transformer import content_from_dict, transform_cv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -56,7 +57,7 @@ def generate_profile(
     extra_certificates: list[str] | None = None,
 ) -> tuple[BeraterprofilContent, dict]:
     """LLM-first: extract CV text → LLM creates template content → optional rules fallback."""
-    cv_text = extract_cv_text(cv_path)
+    cv_text, extraction_hints = extract_cv_text_with_hints(cv_path)
     parsed = parse_cv_for_audit(cv_path)
 
     if use_llm is None:
@@ -69,6 +70,7 @@ def generate_profile(
                 domain=domain,
                 extra_certificates=extra_certificates,
                 parsed_cv=parsed,
+                extraction_hints=extraction_hints,
             )
             mode = "LLM (Volltext-CV)"
         except Exception as exc:
@@ -94,6 +96,7 @@ def generate_profile(
     audit = {
         "generation_mode": mode,
         "cv_text_length": len(cv_text),
+        "extraction_hints": extraction_hints,
         "parsed_cv": parsed.to_dict(),
         "beraterprofil": content.to_dict(),
     }
@@ -101,40 +104,49 @@ def generate_profile(
 
 
 def apply_manager_feedback(
-    cv_text: str,
     current: BeraterprofilContent,
     manager_comment: str,
     *,
+    cv_text: str | None = None,
     extra_certificates: list[str] | None = None,
 ) -> BeraterprofilContent:
     if not llm_available():
         raise RuntimeError("LLM API key required for manager feedback revisions")
     parsed = None
-    try:
-        from src.models.schemas import ParsedCV
+    if cv_text:
+        try:
+            from src.models.schemas import ParsedCV
 
-        parsed = ParsedCV(raw_text=cv_text)
-    except Exception:
-        pass
+            parsed = ParsedCV(raw_text=cv_text)
+        except Exception:
+            pass
 
     return revise_profile_with_manager_comment(
-        cv_text,
         current,
         manager_comment,
+        cv_text=cv_text,
         parsed_cv=parsed,
         extra_certificates=extra_certificates,
     )
+
+
+def import_profile_from_pptx(pptx_path: Path) -> tuple[BeraterprofilContent, dict]:
+    content = parse_beraterprofil_pptx(pptx_path)
+    audit = {
+        "generation_mode": "Importiert aus PPTX",
+        "source_pptx": str(pptx_path),
+        "beraterprofil": content.to_dict(),
+    }
+    return content, audit
 
 
 def export_pptx(
     content: BeraterprofilContent,
     *,
     photo_path: Path | None = None,
-    output_name: str | None = None,
 ) -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    safe = sanitize_filename(output_name or "Beraterprofil")
-    output_path = OUTPUT_DIR / f"{safe}_Beraterprofil.pptx"
+    output_path = OUTPUT_DIR / f"{DEFAULT_EXPORT_STEM}.pptx"
     generate_pptx(
         content=content,
         template_path=DEFAULT_TEMPLATE,

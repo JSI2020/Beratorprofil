@@ -24,6 +24,7 @@ def normalize_content(
     cv: ParsedCV,
     domain: str,
     extra_certificates: list[str] | None = None,
+    extraction_hints: dict | None = None,
 ) -> BeraterprofilContent:
     """Preserve LLM-authored text; only fix counts, headers, and CV-derived gaps."""
     fallback = build_profile_content(cv, domain, extra_certificates)
@@ -38,7 +39,13 @@ def normalize_content(
     if len(international) < 3:
         international = fallback.international_experience[:4]
     tools = _normalize_tool_categories(content.tool_categories, cv, fallback)
-    education = _normalize_education(content.education_certificates, cv, extra_certificates, fallback)
+    education = _normalize_education(
+        content.education_certificates,
+        cv,
+        extra_certificates,
+        fallback,
+        extraction_hints=extraction_hints,
+    )
     if not education:
         education = fallback.education_certificates
 
@@ -147,6 +154,8 @@ def _normalize_education(
     cv: ParsedCV,
     extra_certificates: list[str] | None,
     fallback: BeraterprofilContent,
+    *,
+    extraction_hints: dict | None = None,
 ) -> list[str]:
     lines = [line.strip() for line in llm_lines if line.strip()]
 
@@ -156,6 +165,14 @@ def _normalize_education(
             fixed.extend(_build_education_lines(cv, extra_certificates))
             continue
         fixed.append(line)
+
+    if not fixed and extraction_hints:
+        for candidate in extraction_hints.get("education_candidates", []):
+            if candidate not in fixed:
+                fixed.append(candidate)
+        for candidate in extraction_hints.get("certification_candidates", []):
+            if candidate not in fixed:
+                fixed.append(candidate)
 
     if not fixed:
         fixed = fallback.education_certificates

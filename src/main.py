@@ -9,7 +9,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.utils.filename import sanitize_filename
+from src.utils.export_name import DEFAULT_EXPORT_STEM
 from src.generator.pptx_generator import generate_pptx
 from src.parser.cv_parser import parse_cv
 from src.transformer.content_transformer import transform_cv
@@ -102,8 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         strict_template=args.strict_template,
     )
 
-    safe_name = sanitize_filename(parsed.name) if parsed.name else sanitize_filename(cv_path.stem)
-    output_path = Path(args.output) if args.output else DEFAULT_OUTPUT_DIR / f"{safe_name}_Beraterprofil.pptx"
+    output_path = Path(args.output) if args.output else DEFAULT_OUTPUT_DIR / f"{DEFAULT_EXPORT_STEM}.pptx"
 
     generate_pptx(
         content=content,

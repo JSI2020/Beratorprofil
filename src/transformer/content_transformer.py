@@ -77,6 +77,7 @@ def _transform_with_llm(
     extra_certificates: list[str] | None,
 ) -> BeraterprofilContent:
     from src.llm.profile_generator import generate_profile_from_cv_text
+    from src.parser.cv_hints import extract_cv_hints
 
     if not cv.raw_text.strip():
         raise ValueError("CV has no raw text for LLM")
@@ -86,6 +87,7 @@ def _transform_with_llm(
         domain=domain,
         extra_certificates=extra_certificates,
         parsed_cv=cv,
+        extraction_hints=extract_cv_hints(cv.raw_text),
     )
 
 

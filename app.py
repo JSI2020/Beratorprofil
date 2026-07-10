@@ -9,7 +9,7 @@ from pathlib import Path
 import streamlit as st
 import yaml
 
-from src.utils.filename import sanitize_filename
+from src.utils.export_name import default_export_filename
 from src.web.pipeline import (
     apply_manager_feedback,
     cleanup_temp,
@@ -17,6 +17,7 @@ from src.web.pipeline import (
     content_to_json,
     export_pptx,
     generate_profile,
+    import_profile_from_pptx,
     init_env,
     llm_status,
     save_upload_temporarily,
@@ -45,7 +46,7 @@ def init_session_state() -> None:
         "profile_json": "",
         "audit_json": "",
         "generation_mode": "",
-        "consultant_name": "",
+        "profile_source": "",
         "cv_raw_text": "",
         "manager_history": [],
         "photo_temp_path": None,
@@ -67,28 +68,58 @@ def render_main_workflow(opts: dict, status: dict) -> None:
             "Lokal: `.env` · Streamlit Cloud: Secrets."
         )
 
-    st.markdown('<div class="orbit-card"><div class="orbit-card-title">Schritt 1 — CV Upload</div>', unsafe_allow_html=True)
-    uploaded_cv = st.file_uploader(
-        "Lebenslauf hochladen (PDF, DOCX, TXT)",
-        type=["pdf", "docx", "doc", "txt", "md"],
+    st.markdown('<div class="orbit-card"><div class="orbit-card-title">Schritt 1 — Profil laden</div>', unsafe_allow_html=True)
+
+    source_mode = st.radio(
+        "Quelle",
+        ["Neues Profil aus CV", "Bestehendes Beraterprofil (PPTX)"],
+        horizontal=True,
         label_visibility="collapsed",
     )
+
+    uploaded_cv = None
+    uploaded_pptx = None
+
+    if source_mode == "Neues Profil aus CV":
+        uploaded_cv = st.file_uploader(
+            "Lebenslauf hochladen (PDF, DOCX, TXT)",
+            type=["pdf", "docx", "doc", "txt", "md"],
+            label_visibility="collapsed",
+            key="cv_upload",
+        )
+    else:
+        uploaded_pptx = st.file_uploader(
+            "Beraterprofil PowerPoint hochladen (.pptx)",
+            type=["pptx"],
+            label_visibility="collapsed",
+            key="pptx_upload",
+        )
+        st.caption("Laden Sie ein bestehendes ORBIT-Beraterprofil hoch, um es per Manager-Feedback zu aktualisieren.")
+
     st.markdown("</div>", unsafe_allow_html=True)
 
-    col_gen, col_new = st.columns([3, 1])
-    with col_gen:
-        generate_clicked = st.button(
-            "Profil generieren (LLM)",
-            type="primary",
-            disabled=uploaded_cv is None or not opts["use_llm"],
-            use_container_width=True,
-        )
+    col_action, col_new = st.columns([3, 1])
+    with col_action:
+        if source_mode == "Neues Profil aus CV":
+            action_clicked = st.button(
+                "Profil generieren (LLM)",
+                type="primary",
+                disabled=uploaded_cv is None or not opts["use_llm"],
+                use_container_width=True,
+            )
+        else:
+            action_clicked = st.button(
+                "Profil aus PPTX laden",
+                type="primary",
+                disabled=uploaded_pptx is None,
+                use_container_width=True,
+            )
     with col_new:
         if st.button("Neue Session", use_container_width=True, type="secondary"):
             reset_session()
             st.rerun()
 
-    if generate_clicked and uploaded_cv:
+    if action_clicked and uploaded_cv:
         cv_path = save_upload_temporarily(uploaded_cv)
         try:
             if opts["photo"]:
@@ -96,6 +127,7 @@ def render_main_workflow(opts: dict, status: dict) -> None:
                 st.session_state.photo_temp_path = str(photo_path)
 
             st.session_state.cv_raw_text = extract_cv_text(cv_path)
+            st.session_state.profile_source = "cv"
 
             with st.spinner("LLM liest den vollständigen CV und erstellt das Beraterprofil…"):
                 content, audit = generate_profile(
@@ -110,12 +142,26 @@ def render_main_workflow(opts: dict, status: dict) -> None:
 
                 st.session_state.profile_json = content_to_json(content)
                 st.session_state.audit_json = json.dumps(audit, ensure_ascii=False, indent=2)
-                raw_name = audit["parsed_cv"].get("name") or Path(uploaded_cv.name).stem
-                st.session_state.consultant_name = sanitize_filename(raw_name)
                 st.session_state.generation_mode = audit.get("generation_mode", "LLM")
                 st.session_state.manager_history = []
         finally:
             cleanup_temp(cv_path)
+
+    if action_clicked and uploaded_pptx:
+        pptx_path = save_upload_temporarily(uploaded_pptx)
+        try:
+            with st.spinner("Beraterprofil aus PowerPoint wird gelesen…"):
+                content, audit = import_profile_from_pptx(pptx_path)
+                st.session_state.profile_json = content_to_json(content)
+                st.session_state.audit_json = json.dumps(audit, ensure_ascii=False, indent=2)
+                st.session_state.generation_mode = audit.get("generation_mode", "Importiert aus PPTX")
+                st.session_state.profile_source = "pptx"
+                st.session_state.cv_raw_text = ""
+                st.session_state.manager_history = []
+        except Exception as exc:
+            st.error(f"PPTX konnte nicht gelesen werden: {exc}")
+        finally:
+            cleanup_temp(pptx_path)
 
     if st.session_state.profile_json:
         _render_results(opts)
@@ -138,19 +184,21 @@ def _render_manager_feedback(opts: dict) -> None:
         key="manager_comment_input",
     )
 
+    has_source = bool(st.session_state.profile_json)
     if st.button(
         "Profil mit Feedback aktualisieren",
         type="primary",
-        disabled=not manager_comment.strip() or not st.session_state.cv_raw_text,
+        disabled=not manager_comment.strip() or not has_source or not opts["use_llm"],
         use_container_width=True,
     ):
         try:
             current = content_from_json(st.session_state.profile_json)
+            cv_text = st.session_state.cv_raw_text or None
             with st.spinner("LLM aktualisiert das Profil nach Manager-Feedback…"):
                 revised = apply_manager_feedback(
-                    st.session_state.cv_raw_text,
                     current,
                     manager_comment,
+                    cv_text=cv_text,
                     extra_certificates=opts["certificates"] or None,
                 )
                 st.session_state.profile_json = content_to_json(revised)
@@ -214,25 +262,25 @@ def _render_results(opts: dict) -> None:
         for issue in issues:
             st.write(f"- {issue}")
 
+    export_filename = default_export_filename()
     if st.button("PowerPoint erstellen", type="primary", disabled=not can_export):
         photo = Path(st.session_state.photo_temp_path) if st.session_state.photo_temp_path else None
         output = export_pptx(
             content,
             photo_path=photo if photo and photo.exists() else None,
-            output_name=st.session_state.consultant_name or "Beraterprofil",
         )
         st.success(f"Erstellt: {output.name}")
         st.download_button(
             "PowerPoint herunterladen",
             data=output.read_bytes(),
-            file_name=output.name,
+            file_name=export_filename,
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             use_container_width=True,
         )
         st.download_button(
             "JSON Audit herunterladen",
             data=st.session_state.audit_json.encode("utf-8"),
-            file_name=output.with_suffix(".json").name,
+            file_name=default_export_filename(suffix=".json"),
             mime="application/json",
             use_container_width=True,
         )

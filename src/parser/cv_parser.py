@@ -15,31 +15,10 @@ def parse_cv(path: str | Path) -> ParsedCV:
 
 
 def _read_text(path: Path) -> str:
-    suffix = path.suffix.lower()
-    if suffix == ".pdf":
-        return _read_pdf(path)
-    if suffix in {".docx", ".doc"}:
-        return _read_docx(path)
-    if suffix in {".txt", ".md"}:
-        return path.read_text(encoding="utf-8", errors="ignore")
-    raise ValueError(f"Unsupported CV format: {suffix}")
+    from src.parser.cv_reader import read_cv_document
+    from src.parser.cv_hints import prepare_cv_for_llm
 
-
-def _read_pdf(path: Path) -> str:
-    from pypdf import PdfReader
-
-    reader = PdfReader(str(path))
-    parts: list[str] = []
-    for page in reader.pages:
-        parts.append(page.extract_text() or "")
-    return "\n".join(parts)
-
-
-def _read_docx(path: Path) -> str:
-    from docx import Document
-
-    doc = Document(str(path))
-    return "\n".join(p.text for p in doc.paragraphs)
+    return prepare_cv_for_llm(read_cv_document(path))
 
 
 def _parse_text(text: str) -> ParsedCV:
