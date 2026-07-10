@@ -1,0 +1,18 @@
+# ORBIT Beraterprofil domains — auto-inferred if empty, or user-selected override
+domains:
+  - Funknetzplanung
+  - Software-Entwicklung
+  - Cloud Solutions
+  - IT-Security
+  - BI & Data Analytics
+  - CRM-Beratung
+  - ERP-Beratung
+  - Projektmanagement
+  - Technische Dokumentation
+  - IT-Beratung
+
+position_levels:
+  - Consultant
+  - Senior Consultant
+  - Principal Consultant
+  - Lead Consultant

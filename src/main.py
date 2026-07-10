@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from src.generator.pptx_generator import generate_pptx
 from src.parser.cv_parser import parse_cv
 from src.transformer.content_transformer import transform_cv
@@ -60,10 +62,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Force rules-based transformation",
     )
+    parser.add_argument(
+        "--strict-template",
+        action="store_true",
+        help="Use rigid ORBIT template text instead of LLM-personalized content",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv(PROJECT_ROOT / ".env")
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -89,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         domain_override=args.domain,
         extra_certificates=args.certificate,
         use_llm=use_llm,
+        strict_template=args.strict_template,
     )
 
     safe_name = parsed.name.replace(" ", "_") if parsed.name else cv_path.stem

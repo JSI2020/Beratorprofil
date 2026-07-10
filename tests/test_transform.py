@@ -20,8 +20,9 @@ def test_telecom_domain_classification():
     )
     content = transform_cv(cv, use_llm=False)
     assert content.domain == "Funknetzplanung"
-    assert content.title.startswith("Beraterprofil –")
-    assert len(content.kompetenzen) >= 6
+    assert content.title == "Beraterprofil – Funknetzplanung"
+    assert content.position_level == "Consultant"
+    assert len(content.kompetenzen) == 8
 
 
 def test_template_exists():

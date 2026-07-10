@@ -7,7 +7,7 @@ Automated generation of ORBIT **Beraterprofil** one-pager PowerPoint slides from
 - Parse CVs from **PDF**, **DOCX**, or **TXT**
 - Transform content into German Beraterprofil structure
 - Fill fixed ORBIT PowerPoint template with correct alignment
-- Optional LLM enhancement (OpenAI / Anthropic)
+- Optional LLM enhancement (DeepSeek / Mistral / OpenAI / Anthropic)
 - JSON audit file for review and quality checks
 
 ## Quick Start
@@ -22,6 +22,17 @@ python -m src.main "C:\path\to\cv.pdf"
 ```
 
 Output is written to `output/<Name>_Beraterprofil.pptx`.
+
+## Web App (Streamlit)
+
+```powershell
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Open http://localhost:8501 — upload any CV, preview the generated profile, edit JSON if needed, download PowerPoint.
+
+Design tokens live in `DESIGN.md` (Google [design.md](https://github.com/google-labs-code/design.md) format).
 
 ## CLI Options
 
@@ -71,7 +82,35 @@ Beratorprofil/
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and set API keys if using `--llm`.
+Copy `.env.example` to `.env` (already included) and add your API key.
+
+### DeepSeek (recommended)
+
+```env
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=your-key-here
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+Get a key at https://platform.deepseek.com/
+
+### Mistral
+
+```env
+LLM_PROVIDER=mistral
+MISTRAL_API_KEY=your-key-here
+MISTRAL_MODEL=mistral-large-latest
+```
+
+Get a key at https://console.mistral.ai/
+
+Then run with LLM:
+
+```powershell
+python -m src.main cv.pdf --llm
+```
+
+Without an API key, rules-based mode still works with `--no-llm`.
 
 ## Tests
 
