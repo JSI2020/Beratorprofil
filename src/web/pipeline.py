@@ -9,6 +9,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src.utils.filename import sanitize_filename
+
 from src.generator.pptx_generator import generate_pptx
 from src.llm.client import llm_available, resolve_llm_config
 from src.llm.profile_generator import generate_profile_from_cv_text, revise_profile_with_manager_comment
@@ -131,7 +133,7 @@ def export_pptx(
     output_name: str | None = None,
 ) -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    safe = (output_name or "Beraterprofil").replace(" ", "_")
+    safe = sanitize_filename(output_name or "Beraterprofil")
     output_path = OUTPUT_DIR / f"{safe}_Beraterprofil.pptx"
     generate_pptx(
         content=content,

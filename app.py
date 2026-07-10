@@ -9,6 +9,7 @@ from pathlib import Path
 import streamlit as st
 import yaml
 
+from src.utils.filename import sanitize_filename
 from src.web.pipeline import (
     apply_manager_feedback,
     cleanup_temp,
@@ -109,7 +110,8 @@ def render_main_workflow(opts: dict, status: dict) -> None:
 
                 st.session_state.profile_json = content_to_json(content)
                 st.session_state.audit_json = json.dumps(audit, ensure_ascii=False, indent=2)
-                st.session_state.consultant_name = audit["parsed_cv"].get("name") or Path(uploaded_cv.name).stem
+                raw_name = audit["parsed_cv"].get("name") or Path(uploaded_cv.name).stem
+                st.session_state.consultant_name = sanitize_filename(raw_name)
                 st.session_state.generation_mode = audit.get("generation_mode", "LLM")
                 st.session_state.manager_history = []
         finally:
