@@ -20,8 +20,9 @@ def generate_profile_from_cv_text(
     extra_certificates: list[str] | None = None,
     parsed_cv=None,
     extraction_hints: dict | None = None,
+    cv_only: bool = False,
 ) -> BeraterprofilContent:
-    """Primary pipeline: LLM reads full CV text and returns complete template content."""
+    """LLM reads uploaded CV text and returns template content."""
     system_prompt = (_PROMPTS_DIR / "beraterprofil_from_cv.md").read_text(encoding="utf-8")
     domain_hint = domain or "auto"
 
@@ -32,14 +33,24 @@ def generate_profile_from_cv_text(
             "extraction_hints": extraction_hints or {},
             "domain": domain_hint,
             "extra_certificates": extra_certificates or [],
+            "cv_only": cv_only,
         },
     )
     content = content_from_dict(data)
 
-    if parsed_cv is not None:
+    if parsed_cv is not None and not cv_only:
         content = normalize_content(
             content,
             parsed_cv,
+            content.domain or domain or "IT-Beratung",
+            extra_certificates,
+            extraction_hints=extraction_hints,
+        )
+    elif cv_only:
+        from src.transformer.content_normalizer import normalize_cv_only
+
+        content = normalize_cv_only(
+            content,
             content.domain or domain or "IT-Beratung",
             extra_certificates,
             extraction_hints=extraction_hints,
@@ -55,6 +66,7 @@ def revise_profile_with_manager_comment(
     cv_text: str | None = None,
     parsed_cv=None,
     extra_certificates: list[str] | None = None,
+    cv_only: bool = False,
 ) -> BeraterprofilContent:
     """Apply manager feedback to an existing profile via LLM."""
     comment = manager_comment.strip()
@@ -69,6 +81,7 @@ def revise_profile_with_manager_comment(
             "current_profile": current.to_dict(),
             "manager_comment": comment,
             "revision_mode": "cv_backed" if cv_text else "profile_only",
+            "cv_only": cv_only,
         },
     )
     revised = content_from_dict(data)
@@ -76,7 +89,7 @@ def revise_profile_with_manager_comment(
         dict.fromkeys(revised.audit_warnings + [f"Manager-Feedback angewendet: {comment[:120]}"])
     )
 
-    if parsed_cv is not None:
+    if parsed_cv is not None and not cv_only:
         revised = normalize_content(revised, parsed_cv, revised.domain, extra_certificates)
 
     return revised

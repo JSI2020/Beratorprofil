@@ -17,7 +17,7 @@ def render_settings_panel(config: dict) -> dict:
         if status["active"]:
             st.success(f"LLM aktiv · {status['provider']}")
         else:
-            st.error("Kein LLM API-Key — bitte Secrets/.env konfigurieren")
+            st.info("Kein LLM API-Key — Regelbasierte Generierung verfügbar.")
 
         st.markdown("**Profil**")
         domain_options = ["Automatisch erkennen"] + config.get("domains", [])
@@ -26,6 +26,18 @@ def render_settings_panel(config: dict) -> dict:
 
         position_levels = config.get("position_levels", ["Consultant", "Senior Consultant"])
         position_override = st.selectbox("Position (optional)", ["Aus CV ableiten"] + position_levels)
+
+        st.markdown("**Generierung**")
+        use_llm = st.checkbox(
+            "LLM verwenden",
+            value=llm_status()["active"],
+            help="Ohne LLM: regelbasierte Extraktion nur aus dem hochgeladenen CV",
+        )
+        strict_template = st.checkbox(
+            "Striktes ORBIT-Template",
+            value=False,
+            help="ORBIT-Mustertexte statt LLM-personalisiertem Inhalt",
+        )
 
         st.markdown("**Optional**")
         cert_input = st.text_area(
@@ -41,8 +53,8 @@ def render_settings_panel(config: dict) -> dict:
     return {
         "domain": domain,
         "position_override": position_override,
-        "use_llm": status["active"],
-        "strict_template": False,
+        "use_llm": use_llm,
+        "strict_template": strict_template,
         "certificates": certificates,
         "photo": photo,
     }

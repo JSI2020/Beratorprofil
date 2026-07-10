@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from src.llm.client import llm_available
 from src.models.schemas import (
     BeraterprofilContent,
     CategorizedBullet,
@@ -34,17 +33,18 @@ def transform_cv(
     extra_certificates: list[str] | None = None,
     use_llm: bool | None = None,
     strict_template: bool = False,
+    cv_only: bool = False,
 ) -> BeraterprofilContent:
     domain = domain_override or _classify_domain(cv)
 
     if use_llm is None:
-        use_llm = llm_available()
+        use_llm = False
 
     if strict_template or not use_llm:
         return build_profile_content(cv, domain, extra_certificates)
 
     try:
-        return _transform_with_llm(cv, domain, extra_certificates)
+        return _transform_with_llm(cv, domain, extra_certificates, cv_only=cv_only)
     except Exception as exc:
         content = build_profile_content(cv, domain, extra_certificates)
         content.audit_warnings.append(f"LLM fallback used: {exc}")
@@ -75,6 +75,8 @@ def _transform_with_llm(
     cv: ParsedCV,
     domain: str,
     extra_certificates: list[str] | None,
+    *,
+    cv_only: bool = False,
 ) -> BeraterprofilContent:
     from src.llm.profile_generator import generate_profile_from_cv_text
     from src.parser.cv_hints import extract_cv_hints
@@ -86,8 +88,9 @@ def _transform_with_llm(
         cv.raw_text,
         domain=domain,
         extra_certificates=extra_certificates,
-        parsed_cv=cv,
+        parsed_cv=None if cv_only else cv,
         extraction_hints=extract_cv_hints(cv.raw_text),
+        cv_only=cv_only,
     )
 
 

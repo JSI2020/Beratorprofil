@@ -13,9 +13,10 @@ from src.utils.export_name import DEFAULT_EXPORT_STEM
 
 from src.generator.pptx_generator import generate_pptx
 from src.llm.client import llm_available, resolve_llm_config
-from src.llm.profile_generator import generate_profile_from_cv_text, revise_profile_with_manager_comment
+from src.llm.profile_generator import revise_profile_with_manager_comment
 from src.models.schemas import BeraterprofilContent, CategorizedBullet, ToolCategory
-from src.parser.cv_text import extract_cv_text_with_hints, parse_cv_for_audit
+from src.parser.cv_parser import parse_cv
+from src.parser.cv_text import extract_cv_text
 from src.transformer.content_transformer import content_from_dict, transform_cv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -54,49 +55,40 @@ def generate_profile(
     use_llm: bool | None = None,
     strict_template: bool = False,
     extra_certificates: list[str] | None = None,
+    source_filename: str | None = None,
 ) -> tuple[BeraterprofilContent, dict]:
-    """LLM-first: extract CV text → LLM creates template content → optional rules fallback."""
-    cv_text, extraction_hints = extract_cv_text_with_hints(cv_path)
-    parsed = parse_cv_for_audit(cv_path)
+    """Build profile from the uploaded CV only — rules-based by default, optional LLM."""
+    parsed = parse_cv(cv_path)
+    cv_text = extract_cv_text(cv_path)
 
     if use_llm is None:
-        use_llm = llm_available()
+        use_llm = False
 
-    if use_llm and llm_available() and not strict_template:
-        try:
-            content = generate_profile_from_cv_text(
-                cv_text,
-                domain=domain,
-                extra_certificates=extra_certificates,
-                parsed_cv=parsed,
-                extraction_hints=extraction_hints,
-            )
-            mode = "LLM (Volltext-CV)"
-        except Exception as exc:
-            content = transform_cv(
-                parsed,
-                domain_override=domain,
-                extra_certificates=extra_certificates,
-                use_llm=False,
-                strict_template=strict_template,
-            )
-            content.audit_warnings.append(f"LLM primary failed, rules fallback: {exc}")
-            mode = "Regelbasiert (LLM-Fehler)"
+    effective_llm = bool(use_llm and llm_available())
+
+    content = transform_cv(
+        parsed,
+        domain_override=domain,
+        extra_certificates=extra_certificates,
+        use_llm=effective_llm,
+        strict_template=strict_template,
+        cv_only=True,
+    )
+
+    if strict_template:
+        mode = "Regelbasiert (Template)"
+    elif use_llm and effective_llm:
+        mode = "LLM (nur hochgeladenes CV)"
+    elif use_llm:
+        mode = "Regelbasiert (LLM gewählt, kein API-Key)"
     else:
-        content = transform_cv(
-            parsed,
-            domain_override=domain,
-            extra_certificates=extra_certificates,
-            use_llm=False,
-            strict_template=strict_template,
-        )
-        mode = "Regelbasiert" if strict_template else "Regelbasiert (kein API-Key)"
+        mode = "Regelbasiert (nur CV)"
 
     audit = {
         "generation_mode": mode,
+        "data_source": "uploaded_cv_only",
+        "cv_filename": source_filename or cv_path.name,
         "cv_text_length": len(cv_text),
-        "extraction_hints": extraction_hints,
-        "parsed_cv": parsed.to_dict(),
         "beraterprofil": content.to_dict(),
     }
     return content, audit
@@ -111,21 +103,14 @@ def apply_manager_feedback(
 ) -> BeraterprofilContent:
     if not llm_available():
         raise RuntimeError("LLM API key required for manager feedback revisions")
-    parsed = None
-    if cv_text:
-        try:
-            from src.models.schemas import ParsedCV
-
-            parsed = ParsedCV(raw_text=cv_text)
-        except Exception:
-            pass
 
     return revise_profile_with_manager_comment(
         current,
         manager_comment,
         cv_text=cv_text,
-        parsed_cv=parsed,
+        parsed_cv=None,
         extra_certificates=extra_certificates,
+        cv_only=True,
     )
 
 

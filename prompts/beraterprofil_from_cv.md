@@ -8,6 +8,7 @@ You receive:
 - `extraction_hints`: auto-detected education/cert/tool candidates and notes — **use as a checklist, not as the only source**. Always verify against `cv_text`.
 - `domain`: target domain (or "auto" — infer from CV)
 - `extra_certificates`: optional certificate lines from HR
+- `cv_only`: when true, use **only** facts present in `cv_text` — no assumptions, no prior context, no external memory
 
 ## Output
 Return ONLY valid JSON matching this schema:
@@ -58,6 +59,7 @@ Return ONLY valid JSON matching this schema:
 7. **Output language:** write all profile fields in **German** (translate from English CV content). Keep product/tool abbreviations as-is (LTE, 5G, M2000, etc.).
 
 ## Rules
+- Use **only** `cv_text` (and `extra_certificates` if provided). No chat memory, no prior profiles, no invented facts.
 - Extract facts **only** from the CV — never invent clients, tools, certifications, or dates.
 - **Never include the consultant's personal name, email, or phone in any profile field.**
 - If information appears fragmented (common in PDF/table extraction), **reconstruct** it from nearby lines in the same section.

@@ -43,6 +43,17 @@ def reset_session() -> None:
         del st.session_state[key]
 
 
+def clear_profile_state() -> None:
+    """Drop prior profile data — each upload starts fresh."""
+    st.session_state.profile_json = ""
+    st.session_state.audit_json = ""
+    st.session_state.generation_mode = ""
+    st.session_state.profile_source = ""
+    st.session_state.cv_raw_text = ""
+    st.session_state.manager_history = []
+    st.session_state.photo_temp_path = None
+
+
 def init_session_state() -> None:
     defaults = {
         "profile_json": "",
@@ -64,11 +75,8 @@ def render_main_workflow(opts: dict, status: dict) -> None:
     render_hero()
     render_llm_badge(status["active"], status.get("provider"))
 
-    if not status["active"]:
-        st.warning(
-            "Für die Generierung wird ein LLM API-Key benötigt. "
-            "Lokal: `.env` · Streamlit Cloud: Secrets."
-        )
+    if opts["use_llm"] and not status["active"]:
+        st.warning("LLM ist aktiviert, aber kein API-Key gefunden — es wird regelbasiert generiert.")
 
     st.markdown('<div class="orbit-card"><div class="orbit-card-title">Schritt 1 — Profil laden</div>', unsafe_allow_html=True)
 
@@ -104,9 +112,9 @@ def render_main_workflow(opts: dict, status: dict) -> None:
     with col_action:
         if source_mode == "Neues Profil aus CV":
             action_clicked = st.button(
-                "Profil generieren (LLM)",
+                "Profil generieren",
                 type="primary",
-                disabled=uploaded_cv is None or not opts["use_llm"],
+                disabled=uploaded_cv is None,
                 use_container_width=True,
             )
         else:
@@ -122,6 +130,7 @@ def render_main_workflow(opts: dict, status: dict) -> None:
             st.rerun()
 
     if action_clicked and uploaded_cv:
+        clear_profile_state()
         cv_path = save_upload_temporarily(uploaded_cv)
         try:
             if opts["photo"]:
@@ -131,12 +140,19 @@ def render_main_workflow(opts: dict, status: dict) -> None:
             st.session_state.cv_raw_text = extract_cv_text(cv_path)
             st.session_state.profile_source = "cv"
 
-            with st.spinner("LLM liest den vollständigen CV und erstellt das Beraterprofil…"):
+            spinner = (
+                "LLM extrahiert Daten aus dem hochgeladenen CV…"
+                if opts["use_llm"]
+                else "Regelbasierte Extraktion aus dem hochgeladenen CV…"
+            )
+            with st.spinner(spinner):
                 content, audit = generate_profile(
                     cv_path,
                     domain=opts["domain"],
-                    use_llm=True,
+                    use_llm=opts["use_llm"],
+                    strict_template=opts["strict_template"],
                     extra_certificates=opts["certificates"] or None,
+                    source_filename=uploaded_cv.name,
                 )
 
                 if opts["position_override"] != "Aus CV ableiten":
@@ -144,12 +160,12 @@ def render_main_workflow(opts: dict, status: dict) -> None:
 
                 st.session_state.profile_json = content_to_json(content)
                 st.session_state.audit_json = json.dumps(audit, ensure_ascii=False, indent=2)
-                st.session_state.generation_mode = audit.get("generation_mode", "LLM")
-                st.session_state.manager_history = []
+                st.session_state.generation_mode = audit.get("generation_mode", "Regelbasiert")
         finally:
             cleanup_temp(cv_path)
 
     if action_clicked and uploaded_pptx:
+        clear_profile_state()
         pptx_path = save_upload_temporarily(uploaded_pptx)
         try:
             with st.spinner("Beraterprofil aus PowerPoint wird gelesen…"):
@@ -159,24 +175,22 @@ def render_main_workflow(opts: dict, status: dict) -> None:
                 st.session_state.generation_mode = audit.get("generation_mode", "Importiert aus PPTX")
                 st.session_state.profile_source = "pptx"
                 st.session_state.cv_raw_text = ""
-                st.session_state.manager_history = []
         except Exception as exc:
             st.error(f"PPTX konnte nicht gelesen werden: {exc}")
         finally:
             cleanup_temp(pptx_path)
 
     if st.session_state.profile_json:
-        _render_results(opts)
+        _render_results(opts, status)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def _render_manager_feedback(opts: dict) -> None:
+def _render_manager_feedback(opts: dict, status: dict) -> None:
     st.markdown("---")
     st.markdown("#### Schritt 2 — Manager-Feedback (optional)")
     st.caption(
-        "Manager kann Kommentare geben. Das Profil wird per LLM aktualisiert. "
-        "Wiederholen bis zufrieden — oder „Neue Session“ starten."
+        "Manager kann Kommentare geben. Bei CV-Profilen wird nur das hochgeladene CV als Quelle verwendet."
     )
 
     manager_comment = st.text_area(
@@ -186,16 +200,20 @@ def _render_manager_feedback(opts: dict) -> None:
         key="manager_comment_input",
     )
 
-    has_source = bool(st.session_state.profile_json)
+    needs_cv = st.session_state.profile_source == "cv"
+    can_revise = bool(st.session_state.profile_json) and status["active"]
+    if needs_cv and not st.session_state.cv_raw_text:
+        can_revise = False
+
     if st.button(
         "Profil mit Feedback aktualisieren",
         type="primary",
-        disabled=not manager_comment.strip() or not has_source or not opts["use_llm"],
+        disabled=not manager_comment.strip() or not can_revise,
         use_container_width=True,
     ):
         try:
             current = content_from_json(st.session_state.profile_json)
-            cv_text = st.session_state.cv_raw_text or None
+            cv_text = st.session_state.cv_raw_text if st.session_state.profile_source == "cv" else None
             with st.spinner("LLM aktualisiert das Profil nach Manager-Feedback…"):
                 revised = apply_manager_feedback(
                     current,
@@ -221,7 +239,7 @@ def _render_manager_feedback(opts: dict) -> None:
                 st.markdown(f"**{entry['time']}** — {entry['comment']}")
 
 
-def _render_results(opts: dict) -> None:
+def _render_results(opts: dict, status: dict) -> None:
     st.markdown("---")
     st.info(f"Aktiver Modus: **{st.session_state.generation_mode}**")
 
@@ -234,7 +252,7 @@ def _render_results(opts: dict) -> None:
     render_warnings(content.audit_warnings)
     render_preview(content)
 
-    _render_manager_feedback(opts)
+    _render_manager_feedback(opts, status)
 
     with st.expander("JSON bearbeiten", expanded=False):
         edited = st.text_area(
@@ -252,7 +270,12 @@ def _render_results(opts: dict) -> None:
 
     with st.expander("Audit / CV-Text"):
         if st.session_state.cv_raw_text:
-            st.text_area("Extrahierter CV-Text (an LLM gesendet)", st.session_state.cv_raw_text, height=200, disabled=True)
+            st.text_area(
+                "Extrahierter CV-Text (einzige Quelle für diese Session)",
+                st.session_state.cv_raw_text,
+                height=200,
+                disabled=True,
+            )
         st.json(json.loads(st.session_state.audit_json) if st.session_state.audit_json else {})
 
     st.markdown("#### Schritt 3 — PowerPoint exportieren")

@@ -7,6 +7,7 @@ A manager has reviewed a draft Beraterprofil and provided feedback. Update the p
 - `manager_comment`: feedback from the hiring manager
 - `cv_text`: original full CV (optional — only when `revision_mode` is `cv_backed`)
 - `revision_mode`: `cv_backed` or `profile_only`
+- `cv_only`: when true, use only the inputs in this request — no chat memory or prior sessions
 
 ## Output
 Return ONLY the updated Beraterprofil JSON (same schema as current_profile).
@@ -15,6 +16,7 @@ Return ONLY the updated Beraterprofil JSON (same schema as current_profile).
 - Apply the manager's requested changes (tone, emphasis, wording, section focus).
 - Keep all content in German (except product/tool abbreviations).
 - **Never include the consultant's personal name, email, or phone in any field.**
+- **No external memory** — only use `cv_text`, `current_profile`, and `manager_comment` from this request.
 - If `revision_mode` is `cv_backed`: the CV is the source of truth — do not add facts not in the CV.
 - If `revision_mode` is `profile_only`: the current profile is the source of truth — refine wording per manager feedback without inventing new facts, clients, tools, or certifications.
 - If manager asks to remove something, remove it.

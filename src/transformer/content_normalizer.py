@@ -184,6 +184,51 @@ def _normalize_education(
     return fixed[:8]
 
 
+def normalize_cv_only(
+    content: BeraterprofilContent,
+    domain: str,
+    extra_certificates: list[str] | None = None,
+    extraction_hints: dict | None = None,
+) -> BeraterprofilContent:
+    """Trim LLM output without injecting template fallbacks — CV upload is the only source."""
+    title = content.title
+    if not title.startswith("Beraterprofil"):
+        title = f"Beraterprofil – {content.domain or domain}"
+
+    kompetenzen = _trim(content.kompetenzen, 1, 8)[:8]
+    relevante = _trim_categorized(content.relevante_erfahrungen, 1, 6)
+    international = [line.strip() for line in content.international_experience if line.strip()][:4]
+    tools = content.tool_categories
+    education = [line.strip() for line in content.education_certificates if line.strip()]
+
+    if extraction_hints:
+        for candidate in extraction_hints.get("education_candidates", []):
+            if candidate not in education:
+                education.append(candidate)
+        for candidate in extraction_hints.get("certification_candidates", []):
+            if candidate not in education:
+                education.append(candidate)
+
+    if extra_certificates:
+        for cert in extra_certificates:
+            if cert not in education:
+                education.append(cert)
+
+    return BeraterprofilContent(
+        domain=content.domain or domain,
+        title=title,
+        position_level=content.position_level,
+        schwerpunkte=_fit_schwerpunkte(content.schwerpunkte) if content.schwerpunkte else "",
+        summary=content.summary,
+        kompetenzen=kompetenzen,
+        relevante_erfahrungen=relevante,
+        international_experience=international,
+        tool_categories=tools,
+        education_certificates=education[:8],
+        audit_warnings=list(content.audit_warnings),
+    )
+
+
 def _split_tools(line: str) -> list[str]:
     line = re.sub(r"^[^:]*:\s*", "", line)
     return [t.strip() for t in re.split(r",|;", line) if t.strip()]
