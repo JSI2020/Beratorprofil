@@ -53,7 +53,7 @@ Return ONLY valid JSON matching this schema:
    - Search for: PSM, ITIL, PMP, PRINCE2, Scrum, AWS, Azure, CCNA, HCIA, HCIP, Huawei, Cisco certifications
    - Include **every** degree and certification found — format: `"YYYY, Degree/Cert Name, Institution/Issuer"`
    - If year is missing, still include the entry and note in `audit_warnings`
-   - **Do NOT leave `education_certificates` empty** if any education/cert content exists anywhere in the CV (including tables, footers, side columns)
+   - **If no education/cert content exists in the CV, leave `education_certificates` empty** and note in `audit_warnings` — never invent entries to fill the section
 5. **Cross-check `extraction_hints`:** if hints list education/cert candidates you have not yet used, re-scan `cv_text` for those lines and include them.
 6. **Tools:** extract from dedicated tool sections AND from job bullets (OSS, RAN, drive test, planning tools, etc.)
 7. **Output language:** write all profile fields in **German** (translate from English CV content). Keep product/tool abbreviations as-is (LTE, 5G, M2000, etc.).

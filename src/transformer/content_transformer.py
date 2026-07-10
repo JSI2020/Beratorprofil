@@ -41,14 +41,24 @@ def transform_cv(
         use_llm = False
 
     if strict_template or not use_llm:
-        return build_profile_content(cv, domain, extra_certificates)
+        content = build_profile_content(cv, domain, extra_certificates)
+        return _fill_gaps_if_needed(content, cv)
 
     try:
         return _transform_with_llm(cv, domain, extra_certificates, cv_only=cv_only)
     except Exception as exc:
         content = build_profile_content(cv, domain, extra_certificates)
         content.audit_warnings.append(f"LLM fallback used: {exc}")
+        return _fill_gaps_if_needed(content, cv)
+
+
+def _fill_gaps_if_needed(content: BeraterprofilContent, cv: ParsedCV) -> BeraterprofilContent:
+    from src.llm.gap_fill import fill_missing_from_cv_with_llm
+
+    cv_text = cv.raw_text.strip()
+    if not cv_text:
         return content
+    return fill_missing_from_cv_with_llm(content, cv_text)
 
 
 def _classify_domain(cv: ParsedCV) -> str:

@@ -21,6 +21,6 @@ Return ONLY the updated Beraterprofil JSON (same schema as current_profile).
 - If `revision_mode` is `profile_only`: the current profile is the source of truth — refine wording per manager feedback without inventing new facts, clients, tools, or certifications.
 - If manager asks to remove something, remove it.
 - If manager asks to emphasize something, strengthen it using available evidence only.
-- Preserve ORBIT template structure (all sections must remain filled).
+- Preserve ORBIT JSON structure (all section keys present). When `cv_only` is true, use empty lists/strings for sections with no CV evidence — **never invent filler text**.
 - Add a brief note to `audit_warnings` if the manager request conflicts with available facts.
 - Return the complete updated profile, not a diff.

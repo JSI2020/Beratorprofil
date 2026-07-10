@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from src.llm.client import call_llm_json
+from src.llm.prompts_loader import load_prompt
 from src.models.schemas import BeraterprofilContent
 from src.transformer.content_normalizer import normalize_content
 from src.transformer.content_transformer import content_from_dict
-from src.transformer.template_profiles import build_profile_content
-
-_PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 
 def generate_profile_from_cv_text(
@@ -23,7 +19,7 @@ def generate_profile_from_cv_text(
     cv_only: bool = False,
 ) -> BeraterprofilContent:
     """LLM reads uploaded CV text and returns template content."""
-    system_prompt = (_PROMPTS_DIR / "beraterprofil_from_cv.md").read_text(encoding="utf-8")
+    system_prompt = load_prompt("beraterprofil_from_cv.md")
     domain_hint = domain or "auto"
 
     data = call_llm_json(
@@ -34,6 +30,7 @@ def generate_profile_from_cv_text(
             "domain": domain_hint,
             "extra_certificates": extra_certificates or [],
             "cv_only": cv_only,
+            "strict_cv_only": True,
         },
     )
     content = content_from_dict(data)
@@ -73,7 +70,7 @@ def revise_profile_with_manager_comment(
     if not comment:
         return current
 
-    system_prompt = (_PROMPTS_DIR / "manager_revision.md").read_text(encoding="utf-8")
+    system_prompt = load_prompt("manager_revision.md")
     data = call_llm_json(
         system_prompt,
         {
@@ -82,6 +79,7 @@ def revise_profile_with_manager_comment(
             "manager_comment": comment,
             "revision_mode": "cv_backed" if cv_text else "profile_only",
             "cv_only": cv_only,
+            "strict_cv_only": True,
         },
     )
     revised = content_from_dict(data)
