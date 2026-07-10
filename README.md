@@ -34,6 +34,27 @@ Open http://localhost:8501 — upload any CV, preview the generated profile, edi
 
 Design tokens live in `DESIGN.md` (Google [design.md](https://github.com/google-labs-code/design.md) format).
 
+## Deploy on Streamlit Cloud (public link)
+
+1. Open https://share.streamlit.io and sign in with GitHub
+2. Click **New app**
+3. Use these settings exactly:
+
+| Setting | Value |
+|---------|-------|
+| Repository | `JSI2020/Beratorprofil` |
+| Branch | `main` |
+| Main file path | `app.py` |
+
+4. Under **Advanced settings → Secrets**, paste your API keys (see `.streamlit/secrets.toml.example`)
+5. Click **Deploy**
+
+Verify `app.py` exists on GitHub: https://github.com/JSI2020/Beratorprofil/blob/main/app.py
+
+If you see *"app.py has not been pushed"*, click **Try again** or delete the app and redeploy — that error usually means deploy started before the latest push.
+
+Your public URL will look like: `https://beratorprofil-xxxxx.streamlit.app`
+
 ## CLI Options
 
 ```powershell
