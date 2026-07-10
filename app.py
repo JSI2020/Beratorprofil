@@ -74,6 +74,7 @@ def render_main_workflow(opts: dict, status: dict) -> None:
 
     render_hero()
     render_llm_badge(status["active"], status.get("provider"))
+    st.caption("Build: e67be81 · Optional LLM · CV-only extraction")
 
     if opts["use_llm"] and not status["active"]:
         st.warning("LLM ist aktiviert, aber kein API-Key gefunden — es wird regelbasiert generiert.")
@@ -146,21 +147,25 @@ def render_main_workflow(opts: dict, status: dict) -> None:
                 else "Regelbasierte Extraktion aus dem hochgeladenen CV…"
             )
             with st.spinner(spinner):
-                content, audit = generate_profile(
-                    cv_path,
-                    domain=opts["domain"],
-                    use_llm=opts["use_llm"],
-                    strict_template=opts["strict_template"],
-                    extra_certificates=opts["certificates"] or None,
-                )
-                audit["cv_filename"] = uploaded_cv.name
+                try:
+                    content, audit = generate_profile(
+                        cv_path,
+                        domain=opts["domain"],
+                        use_llm=opts["use_llm"],
+                        strict_template=opts["strict_template"],
+                        extra_certificates=opts["certificates"] or None,
+                    )
+                    audit["cv_filename"] = uploaded_cv.name
 
-                if opts["position_override"] != "Aus CV ableiten":
-                    content.position_level = opts["position_override"]
+                    if opts["position_override"] != "Aus CV ableiten":
+                        content.position_level = opts["position_override"]
 
-                st.session_state.profile_json = content_to_json(content)
-                st.session_state.audit_json = json.dumps(audit, ensure_ascii=False, indent=2)
-                st.session_state.generation_mode = audit.get("generation_mode", "Regelbasiert")
+                    st.session_state.profile_json = content_to_json(content)
+                    st.session_state.audit_json = json.dumps(audit, ensure_ascii=False, indent=2)
+                    st.session_state.generation_mode = audit.get("generation_mode", "Regelbasiert")
+                except Exception as exc:
+                    st.error(f"Profil-Generierung fehlgeschlagen: {exc}")
+                    st.caption("Tipp: Deaktivieren Sie „LLM verwenden“ für regelbasierte Extraktion ohne API-Key.")
         finally:
             cleanup_temp(cv_path)
 

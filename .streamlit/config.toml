@@ -13,7 +13,7 @@ textColor = "#0F172A"
 borderColor = "#CBD5E1"
 
 [server]
-headless = false
+headless = true
 port = 8501
 address = "127.0.0.1"
 
