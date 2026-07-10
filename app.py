@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
 import yaml
 
 from src.web.pipeline import (
+    apply_manager_feedback,
     cleanup_temp,
     content_from_json,
     content_to_json,
@@ -19,6 +21,7 @@ from src.web.pipeline import (
     save_upload_temporarily,
     validate_for_export,
 )
+from src.parser.cv_text import extract_cv_text
 from src.web.preview import render_hero, render_llm_badge, render_preview, render_warnings
 from src.web.settings_panel import render_settings_panel
 from src.web.styles import inject_styles
@@ -31,13 +34,19 @@ def load_config() -> dict:
     return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
 
+def reset_session() -> None:
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+
+
 def init_session_state() -> None:
     defaults = {
         "profile_json": "",
         "audit_json": "",
         "generation_mode": "",
         "consultant_name": "",
-        "cv_temp_path": None,
+        "cv_raw_text": "",
+        "manager_history": [],
         "photo_temp_path": None,
     }
     for key, value in defaults.items():
@@ -51,42 +60,47 @@ def render_main_workflow(opts: dict, status: dict) -> None:
     render_hero()
     render_llm_badge(status["active"], status.get("provider"))
 
-    st.markdown('<div class="orbit-card"><div class="orbit-card-title">CV Upload</div>', unsafe_allow_html=True)
+    if not status["active"]:
+        st.warning(
+            "Für die Generierung wird ein LLM API-Key benötigt. "
+            "Lokal: `.env` · Streamlit Cloud: Secrets."
+        )
+
+    st.markdown('<div class="orbit-card"><div class="orbit-card-title">Schritt 1 — CV Upload</div>', unsafe_allow_html=True)
     uploaded_cv = st.file_uploader(
-        "Lebenslauf hochladen",
+        "Lebenslauf hochladen (PDF, DOCX, TXT)",
         type=["pdf", "docx", "doc", "txt", "md"],
         label_visibility="collapsed",
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    col_gen, col_clear = st.columns([3, 1])
+    col_gen, col_new = st.columns([3, 1])
     with col_gen:
         generate_clicked = st.button(
-            "Profil generieren",
+            "Profil generieren (LLM)",
             type="primary",
-            disabled=uploaded_cv is None,
+            disabled=uploaded_cv is None or not opts["use_llm"],
             use_container_width=True,
         )
-    with col_clear:
-        if st.button("Zurücksetzen", use_container_width=True, type="secondary"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+    with col_new:
+        if st.button("Neue Session", use_container_width=True, type="secondary"):
+            reset_session()
             st.rerun()
 
     if generate_clicked and uploaded_cv:
         cv_path = save_upload_temporarily(uploaded_cv)
-        st.session_state.cv_temp_path = str(cv_path)
         try:
             if opts["photo"]:
                 photo_path = save_upload_temporarily(opts["photo"])
                 st.session_state.photo_temp_path = str(photo_path)
 
-            with st.spinner("CV wird analysiert und Beraterprofil erstellt…"):
+            st.session_state.cv_raw_text = extract_cv_text(cv_path)
+
+            with st.spinner("LLM liest den vollständigen CV und erstellt das Beraterprofil…"):
                 content, audit = generate_profile(
                     cv_path,
                     domain=opts["domain"],
-                    use_llm=opts["use_llm"],
-                    strict_template=opts["strict_template"],
+                    use_llm=True,
                     extra_certificates=opts["certificates"] or None,
                 )
 
@@ -96,20 +110,66 @@ def render_main_workflow(opts: dict, status: dict) -> None:
                 st.session_state.profile_json = content_to_json(content)
                 st.session_state.audit_json = json.dumps(audit, ensure_ascii=False, indent=2)
                 st.session_state.consultant_name = audit["parsed_cv"].get("name") or Path(uploaded_cv.name).stem
-                mode = "LLM" if opts["use_llm"] and status["active"] else "Regelbasiert"
-                if opts["strict_template"]:
-                    mode = "Striktes Template"
-                st.session_state.generation_mode = mode
+                st.session_state.generation_mode = audit.get("generation_mode", "LLM")
+                st.session_state.manager_history = []
         finally:
             cleanup_temp(cv_path)
 
     if st.session_state.profile_json:
-        _render_results()
+        _render_results(opts)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def _render_results() -> None:
+def _render_manager_feedback(opts: dict) -> None:
+    st.markdown("---")
+    st.markdown("#### Schritt 2 — Manager-Feedback (optional)")
+    st.caption(
+        "Manager kann Kommentare geben. Das Profil wird per LLM aktualisiert. "
+        "Wiederholen bis zufrieden — oder „Neue Session“ starten."
+    )
+
+    manager_comment = st.text_area(
+        "Manager-Kommentar",
+        placeholder="z.B. Schwerpunkte stärker auf 5G legen, MTN-Projekt hervorheben, Summary kürzer formulieren…",
+        height=100,
+        key="manager_comment_input",
+    )
+
+    if st.button(
+        "Profil mit Feedback aktualisieren",
+        type="primary",
+        disabled=not manager_comment.strip() or not st.session_state.cv_raw_text,
+        use_container_width=True,
+    ):
+        try:
+            current = content_from_json(st.session_state.profile_json)
+            with st.spinner("LLM aktualisiert das Profil nach Manager-Feedback…"):
+                revised = apply_manager_feedback(
+                    st.session_state.cv_raw_text,
+                    current,
+                    manager_comment,
+                    extra_certificates=opts["certificates"] or None,
+                )
+                st.session_state.profile_json = content_to_json(revised)
+                st.session_state.manager_history.append(
+                    {
+                        "time": datetime.now().strftime("%H:%M:%S"),
+                        "comment": manager_comment.strip(),
+                    }
+                )
+            st.success("Profil aktualisiert.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Feedback-Update fehlgeschlagen: {exc}")
+
+    if st.session_state.manager_history:
+        with st.expander(f"Feedback-Verlauf ({len(st.session_state.manager_history)})"):
+            for entry in st.session_state.manager_history:
+                st.markdown(f"**{entry['time']}** — {entry['comment']}")
+
+
+def _render_results(opts: dict) -> None:
     st.markdown("---")
     st.info(f"Aktiver Modus: **{st.session_state.generation_mode}**")
 
@@ -121,6 +181,8 @@ def _render_results() -> None:
 
     render_warnings(content.audit_warnings)
     render_preview(content)
+
+    _render_manager_feedback(opts)
 
     with st.expander("JSON bearbeiten", expanded=False):
         edited = st.text_area(
@@ -136,12 +198,15 @@ def _render_results() -> None:
             st.error(f"JSON ungültig: {exc}")
             return
 
-    with st.expander("Audit / extrahierte CV-Daten"):
+    with st.expander("Audit / CV-Text"):
+        if st.session_state.cv_raw_text:
+            st.text_area("Extrahierter CV-Text (an LLM gesendet)", st.session_state.cv_raw_text, height=200, disabled=True)
         st.json(json.loads(st.session_state.audit_json) if st.session_state.audit_json else {})
 
+    st.markdown("#### Schritt 3 — PowerPoint exportieren")
     can_export, issues = validate_for_export(content)
     if can_export:
-        st.success("Validierung bestanden — bereit für PowerPoint-Export")
+        st.success("Validierung bestanden — bereit für Export")
     else:
         st.error("Validierung fehlgeschlagen")
         for issue in issues:

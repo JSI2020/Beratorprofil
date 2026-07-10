@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from src.llm.client import call_llm_json, llm_available
-from src.llm.field_generators import generate_kompetenzen, generate_schwerpunkte
+from src.llm.client import llm_available
 from src.models.schemas import (
     BeraterprofilContent,
     CategorizedBullet,
     ParsedCV,
     ToolCategory,
 )
-from src.transformer.content_normalizer import normalize_content
 from src.transformer.template_profiles import build_profile_content
 
 DOMAIN_KEYWORDS: dict[str, list[str]] = {
@@ -48,13 +44,11 @@ def transform_cv(
         return build_profile_content(cv, domain, extra_certificates)
 
     try:
-        content = _transform_with_llm(cv, domain, extra_certificates)
-        content = normalize_content(content, cv, domain, extra_certificates)
-        return _enrich_cv_fields(content, cv)
+        return _transform_with_llm(cv, domain, extra_certificates)
     except Exception as exc:
         content = build_profile_content(cv, domain, extra_certificates)
         content.audit_warnings.append(f"LLM fallback used: {exc}")
-        return _enrich_cv_fields(content, cv)
+        return content
 
 
 def _classify_domain(cv: ParsedCV) -> str:
@@ -77,43 +71,25 @@ def _classify_domain(cv: ParsedCV) -> str:
     return best
 
 
-def _enrich_cv_fields(content: BeraterprofilContent, cv: ParsedCV) -> BeraterprofilContent:
-    """Step 2+3: dedicated LLM reads full CV for Schwerpunkte and Kompetenzen."""
-    if not llm_available():
-        return content
-
-    try:
-        content.schwerpunkte = generate_schwerpunkte(cv)
-    except Exception as exc:
-        content.audit_warnings.append(f"Schwerpunkte LLM failed: {exc}")
-
-    try:
-        content.kompetenzen = generate_kompetenzen(cv)
-    except Exception as exc:
-        content.audit_warnings.append(f"Kompetenzen LLM failed: {exc}")
-
-    return content
-
-
 def _transform_with_llm(
     cv: ParsedCV,
     domain: str,
     extra_certificates: list[str] | None,
 ) -> BeraterprofilContent:
-    prompt_path = Path(__file__).resolve().parents[2] / "prompts" / "beraterprofil_system.md"
-    system_prompt = prompt_path.read_text(encoding="utf-8")
+    from src.llm.profile_generator import generate_profile_from_cv_text
 
-    user_payload = {
-        "cv": cv.to_dict(),
-        "domain": domain,
-        "extra_certificates": extra_certificates or [],
-    }
+    if not cv.raw_text.strip():
+        raise ValueError("CV has no raw text for LLM")
 
-    data = call_llm_json(system_prompt, user_payload)
-    return _content_from_dict(data)
+    return generate_profile_from_cv_text(
+        cv.raw_text,
+        domain=domain,
+        extra_certificates=extra_certificates,
+        parsed_cv=cv,
+    )
 
 
-def _content_from_dict(data: dict) -> BeraterprofilContent:
+def content_from_dict(data: dict) -> BeraterprofilContent:
     return BeraterprofilContent(
         domain=data.get("domain", "IT-Beratung"),
         title=data.get("title", "Beraterprofil"),

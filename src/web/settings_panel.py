@@ -8,10 +8,16 @@ from src.web.pipeline import llm_status
 
 
 def render_settings_panel(config: dict) -> dict:
-    """Left settings column — avoids Streamlit sidebar theme issues."""
+    """Left settings column."""
     with st.container(border=True):
         st.markdown("### Einstellungen")
         st.caption("Profil-Optionen für diesen Lebenslauf")
+
+        status = llm_status()
+        if status["active"]:
+            st.success(f"LLM aktiv · {status['provider']}")
+        else:
+            st.error("Kein LLM API-Key — bitte Secrets/.env konfigurieren")
 
         st.markdown("**Profil**")
         domain_options = ["Automatisch erkennen"] + config.get("domains", [])
@@ -20,10 +26,6 @@ def render_settings_panel(config: dict) -> dict:
 
         position_levels = config.get("position_levels", ["Consultant", "Senior Consultant"])
         position_override = st.selectbox("Position (optional)", ["Aus CV ableiten"] + position_levels)
-
-        st.markdown("**Generierung**")
-        use_llm = st.checkbox("LLM verwenden", value=llm_status()["active"])
-        strict_template = st.checkbox("Striktes ORBIT-Template", value=False)
 
         st.markdown("**Optional**")
         cert_input = st.text_area(
@@ -39,8 +41,8 @@ def render_settings_panel(config: dict) -> dict:
     return {
         "domain": domain,
         "position_override": position_override,
-        "use_llm": use_llm,
-        "strict_template": strict_template,
+        "use_llm": status["active"],
+        "strict_template": False,
         "certificates": certificates,
         "photo": photo,
     }

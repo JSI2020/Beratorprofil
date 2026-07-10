@@ -11,9 +11,10 @@ from dotenv import load_dotenv
 
 from src.generator.pptx_generator import generate_pptx
 from src.llm.client import llm_available, resolve_llm_config
+from src.llm.profile_generator import generate_profile_from_cv_text, revise_profile_with_manager_comment
 from src.models.schemas import BeraterprofilContent, CategorizedBullet, ToolCategory
-from src.parser.cv_parser import parse_cv
-from src.transformer.content_transformer import transform_cv
+from src.parser.cv_text import extract_cv_text, parse_cv_for_audit
+from src.transformer.content_transformer import content_from_dict, transform_cv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_TEMPLATE = PROJECT_ROOT / "template" / "Beraterprofil_TEMPLATE.pptx"
@@ -52,19 +53,75 @@ def generate_profile(
     strict_template: bool = False,
     extra_certificates: list[str] | None = None,
 ) -> tuple[BeraterprofilContent, dict]:
-    parsed = parse_cv(cv_path)
-    content = transform_cv(
-        parsed,
-        domain_override=domain or None,
-        extra_certificates=extra_certificates,
-        use_llm=use_llm,
-        strict_template=strict_template,
-    )
+    """LLM-first: extract CV text → LLM creates template content → optional rules fallback."""
+    cv_text = extract_cv_text(cv_path)
+    parsed = parse_cv_for_audit(cv_path)
+
+    if use_llm is None:
+        use_llm = llm_available()
+
+    if use_llm and llm_available() and not strict_template:
+        try:
+            content = generate_profile_from_cv_text(
+                cv_text,
+                domain=domain,
+                extra_certificates=extra_certificates,
+                parsed_cv=parsed,
+            )
+            mode = "LLM (Volltext-CV)"
+        except Exception as exc:
+            content = transform_cv(
+                parsed,
+                domain_override=domain,
+                extra_certificates=extra_certificates,
+                use_llm=False,
+                strict_template=strict_template,
+            )
+            content.audit_warnings.append(f"LLM primary failed, rules fallback: {exc}")
+            mode = "Regelbasiert (LLM-Fehler)"
+    else:
+        content = transform_cv(
+            parsed,
+            domain_override=domain,
+            extra_certificates=extra_certificates,
+            use_llm=False,
+            strict_template=strict_template,
+        )
+        mode = "Regelbasiert" if strict_template else "Regelbasiert (kein API-Key)"
+
     audit = {
+        "generation_mode": mode,
+        "cv_text_length": len(cv_text),
         "parsed_cv": parsed.to_dict(),
         "beraterprofil": content.to_dict(),
     }
     return content, audit
+
+
+def apply_manager_feedback(
+    cv_text: str,
+    current: BeraterprofilContent,
+    manager_comment: str,
+    *,
+    extra_certificates: list[str] | None = None,
+) -> BeraterprofilContent:
+    if not llm_available():
+        raise RuntimeError("LLM API key required for manager feedback revisions")
+    parsed = None
+    try:
+        from src.models.schemas import ParsedCV
+
+        parsed = ParsedCV(raw_text=cv_text)
+    except Exception:
+        pass
+
+    return revise_profile_with_manager_comment(
+        cv_text,
+        current,
+        manager_comment,
+        parsed_cv=parsed,
+        extra_certificates=extra_certificates,
+    )
 
 
 def export_pptx(
@@ -90,25 +147,7 @@ def content_to_json(content: BeraterprofilContent) -> str:
 
 
 def content_from_json(text: str) -> BeraterprofilContent:
-    data = json.loads(text)
-    return BeraterprofilContent(
-        domain=data.get("domain", "IT-Beratung"),
-        title=data.get("title", "Beraterprofil"),
-        position_level=data.get("position_level", "Consultant"),
-        schwerpunkte=data.get("schwerpunkte", ""),
-        summary=data.get("summary", ""),
-        kompetenzen=data.get("kompetenzen", []),
-        relevante_erfahrungen=[
-            CategorizedBullet(**item) for item in data.get("relevante_erfahrungen", [])
-        ],
-        international_experience=data.get("international_experience", []),
-        tool_categories=[
-            ToolCategory(category=item["category"], tools=item["tools"])
-            for item in data.get("tool_categories", [])
-        ],
-        education_certificates=data.get("education_certificates", []),
-        audit_warnings=data.get("audit_warnings", []),
-    )
+    return content_from_dict(json.loads(text))
 
 
 def validate_for_export(content: BeraterprofilContent) -> tuple[bool, list[str]]:
